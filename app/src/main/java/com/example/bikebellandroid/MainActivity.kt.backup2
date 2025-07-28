@@ -1,0 +1,478 @@
+package com.bikebell.app
+
+import android.os.Bundle
+import android.util.Log
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import com.bikebell.app.ui.theme.BikeBellAndroidTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.bikebell.app.ui.theme.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.*
+
+class MainActivity : ComponentActivity() {
+    private lateinit var motionManager: MotionManager
+    private lateinit var soundManager: SoundManager
+    private var isInitialized = false
+    
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Keep screen on while app is running
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        
+        // Make app fullscreen to remove white bars
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
+        
+        // Initialize managers before UI
+        motionManager = MotionManager(this)
+        soundManager = SoundManager(this)
+        
+        // Add lifecycle observer
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onResume(owner: LifecycleOwner) {
+                if (isInitialized && motionManager.isActive) {
+                    motionManager.startUpdates()
+                }
+            }
+
+            override fun onPause(owner: LifecycleOwner) {
+                motionManager.stopUpdates()
+            }
+        })
+
+        setContent {
+            BikeBellAndroidTheme {
+                var showSettings by remember { mutableStateOf(false) }
+                var sensitivity by remember { mutableStateOf(200f) }
+                var threshold by remember { mutableStateOf(8f) }
+                var isRinging by remember { mutableStateOf(false) }
+                val infiniteTransition = rememberInfiniteTransition(label = "bell_swing")
+                val swingAngle by infiniteTransition.animateFloat(
+                    initialValue = -10f,
+                    targetValue = if (isRinging) 10f else 0f,
+                    animationSpec = repeatable(
+                        animation = tween(durationMillis = 600, easing = EaseInOut),
+                        repeatMode = RepeatMode.Reverse, iterations = if (isRinging) RepeatMode.Repeat else 0
+                    ),
+                    label = "swing_angle"
+                )
+                var bellState by remember { mutableStateOf("red") }
+
+                // Initialize settings
+                LaunchedEffect(Unit) {
+                    try {
+                        motionManager.updateSettings(threshold, sensitivity)
+                        soundManager.updateSensitivity(sensitivity)
+                        isInitialized = true
+                    } catch (e: Exception) {
+                        Log.e("BikeBell", "Error during initialization: ${e.message}")
+                    }
+                }
+
+                // Monitor acceleration changes
+                LaunchedEffect(motionManager.acceleration) {
+                    if (!isInitialized) return@LaunchedEffect
+                    
+                    try {
+                        val mappedThreshold = ((threshold - 1f) / 49f) * 1.95f + 0.05f
+                        val mappedSensitivity = ((sensitivity - 50f) / 150f) * 3.0f + 0.3f
+                        
+                        Log.d("BikeBell", "Acceleration: ${motionManager.acceleration}, Threshold: $mappedThreshold")
+                        
+                        if (motionManager.isActive) {
+                            if (motionManager.acceleration > mappedThreshold) {
+                                isRinging = true
+                                
+                                Log.d("BikeBell", "Playing bell with intensity: ${(motionManager.acceleration - mappedThreshold) * mappedSensitivity}")
+                                soundManager.playBell((motionManager.acceleration - mappedThreshold) * mappedSensitivity)
+                                // Reset ringing state after a shorter delay
+                                launch {
+                                    delay(150)
+                                    isRinging = false
+                                    bellState = "green"
+                                }
+                            } else {
+                                bellState = "green"
+                            }
+                        } else {
+                            bellState = "red"
+                        }
+                    } catch (e: Exception) {
+                        Log.e("BikeBell", "Error in acceleration monitoring: ${e.message}")
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // Settings button
+                        IconButton(
+                            onClick = { showSettings = true },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // Main bell button with state-based icon
+                        IconButton(
+                            onClick = {
+                                if (!isInitialized) return@IconButton
+                                
+                                try {
+                                    if (motionManager.isActive) {
+                                        motionManager.stopUpdates()
+                                        bellState = "red"
+                                        isRinging = false
+                                    } else {
+                                        motionManager.startUpdates()
+                                        bellState = "green"
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("BikeBell", "Error toggling motion updates: ${e.message}")
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(
+                                        when {
+                                            !motionManager.isActive -> R.drawable.belliconred
+                                            
+                                            else -> R.drawable.bellicongreen
+                                        }
+                                    ),
+                                    contentDescription = if (motionManager.isActive) "Stop" else "Start",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .let { mod ->
+                                            if (isRinging) {
+                                                mod.graphicsLayer {
+                                                    rotationZ = swingAngle
+                                                    scaleX = 1.05f
+                                                    scaleY = 1.05f
+                                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.1f)
+                                                }
+                                            } else {
+                                                mod
+                                            }
+                                        },
+                                    contentScale = ContentScale.Inside
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (showSettings) {
+                    AlertDialog(
+                        onDismissRequest = { 
+                            showSettings = false
+                        },
+                        title = { 
+                            Text(
+                                "Settings",
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = Color.White
+                            )
+                        },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(32.dp)
+                            ) {
+                                // SENSITIVITY section
+                                Column {
+                                    Text(
+                                        "SENSITIVITY",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    
+                                    // Motion Threshold
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                "Motion Threshold",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = Color.White.copy(alpha = 0.9f)
+                                            )
+                                            Text(
+                                                "${((threshold - 1f) / 49f * 100f).toInt()}%",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = Color.White.copy(alpha = 0.9f)
+                                            )
+                                        }
+                                        Slider(
+                                            value = threshold,
+                                            onValueChange = { 
+                                                if (!isInitialized) return@Slider
+                                                try {
+                                                    threshold = it
+                                                    motionManager.updateSettings(threshold, sensitivity)
+                                                } catch (e: Exception) {
+                                                    Log.e("BikeBell", "Error updating threshold: ${e.message}")
+                                                }
+                                            },
+                                            valueRange = 1f..50f,
+                                            steps = 0,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = Color(0xFF007AFF),
+                                                activeTrackColor = Color(0xFF007AFF),
+                                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                            )
+                                        )
+                                        Text(
+                                            "Higher values make the bell less sensitive to motion",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.White.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                    
+                                    // Sound Intensity
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                "Sound Intensity",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = Color.White.copy(alpha = 0.9f)
+                                            )
+                                            Text(
+                                                "${((sensitivity - 50f) / 150f * 100f).toInt()}%",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = Color.White.copy(alpha = 0.9f)
+                                            )
+                                        }
+                                        Slider(
+                                            value = sensitivity,
+                                            onValueChange = { 
+                                                if (!isInitialized) return@Slider
+                                                try {
+                                                    sensitivity = it
+                                                    motionManager.updateSettings(threshold, sensitivity)
+                                                    soundManager.updateSensitivity(sensitivity)
+                                                } catch (e: Exception) {
+                                                    Log.e("BikeBell", "Error updating sensitivity: ${e.message}")
+                                                }
+                                            },
+                                            valueRange = 50f..200f,
+                                            steps = 150,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = Color(0xFF34C759),
+                                                activeTrackColor = Color(0xFF34C759),
+                                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                            )
+                                        )
+                                        Text(
+                                            "Adjusts the volume of the bell (0% = silent, 100% = maximum)",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.White.copy(alpha = 0.6f)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(24.dp))
+                                }
+                                
+                                // BELL TYPE section
+                                Column {
+                                    Text(
+                                        "BELL TYPE",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    
+                                    // Segmented control for bell type
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = Color(0xFF2C2C2E),
+                                        shape = MaterialTheme.shapes.medium
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceEvenly
+                                        ) {
+                                            BellType.values().forEach { type ->
+                                                Surface(
+                                                    modifier = Modifier.weight(1f),
+                                                    color = if (soundManager.currentBellType == type) 
+                                                        Color(0xFF3A3A3C)
+                                                    else 
+                                                        Color.Transparent,
+                                                    shape = MaterialTheme.shapes.medium
+                                                ) {
+                                                    TextButton(
+                                                        onClick = { 
+                                                            if (!isInitialized) return@TextButton
+                                                            try {
+                                                                soundManager.setBellType(type)
+                                                            } catch (e: Exception) {
+                                                                Log.e("BikeBell", "Error setting bell type: ${e.message}")
+                                                            }
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Text(
+                                                            if (type == BellType.BIKE_BELL) "Regular Bell" else "Cow Bell",
+                                                            color = Color.White,
+                                                            style = MaterialTheme.typography.bodyLarge
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Reset button
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Color(0xFF2C2C2E),
+                                    shape = MaterialTheme.shapes.medium
+                                ) {
+                                    TextButton(
+                                        onClick = { 
+                                            if (!isInitialized) return@TextButton
+                                            try {
+                                                threshold = 8f
+                                                sensitivity = 200f
+                                                motionManager.updateSettings(threshold, sensitivity)
+                                                soundManager.updateSensitivity(sensitivity)
+                                                soundManager.setBellType(BellType.BIKE_BELL)
+                                            } catch (e: Exception) {
+                                                Log.e("BikeBell", "Error resetting settings: ${e.message}")
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.textButtonColors(
+                                            contentColor = Color(0xFF007AFF)
+                                        )
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Reset",
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                "Reset to Default Settings",
+                                                style = MaterialTheme.typography.bodyLarge
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = { 
+                                    showSettings = false
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = Color(0xFF007AFF)
+                                )
+                            ) {
+                                Text(
+                                    "Done",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        },
+                        containerColor = Color(0xFF1C1C1E),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clear the flag when app is destroyed
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        isInitialized = false
+        motionManager.stopUpdates()
+        soundManager.cleanup()
+    }
+} 
