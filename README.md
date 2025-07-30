@@ -7,7 +7,7 @@ An Android port of the iOS BikeBell app that simulates a bike bell using the dev
 - Multiple bell types (Bike Bell and Cow Bell)
 - Adjustable sensitivity and threshold
 - Natural sound variations for realistic bell simulation
-- Support for multiple simultaneous rings
+- Support for multiple simultaneous rings     
 
 ## Requirements
 - Android SDK 24 or higher

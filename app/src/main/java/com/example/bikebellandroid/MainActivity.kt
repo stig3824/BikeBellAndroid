@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -100,17 +101,23 @@ class MainActivity : ComponentActivity() {
                 var sensitivity by remember { mutableStateOf(200f) }
                 var threshold by remember { mutableStateOf(8f) }
                 var isRinging by remember { mutableStateOf(false) }
-                val infiniteTransition = rememberInfiniteTransition(label = "bell_swing")
-                val swingAngle by infiniteTransition.animateFloat(
-                    initialValue = -15f,
-                    targetValue = 15f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 800, easing = EaseInOut),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "swing_angle"
-                )
+                var ringIntensity by remember { mutableStateOf(0f) }
                 var bellState by remember { mutableStateOf("red") }
+                
+                // Animate the ring intensity
+                val animatedRingIntensity by animateFloatAsState(
+                    targetValue = if (isRinging) ringIntensity else 0f,
+                    animationSpec = tween(
+                        durationMillis = if (isRinging) (10000 / ringIntensity.coerceAtLeast(0.1f)).toInt() else 1500,
+                        easing = EaseInOut
+                    ),
+                    label = "ring_intensity"
+                )
+                
+                // Debug animation state
+                LaunchedEffect(isRinging, animatedRingIntensity) {
+                    Log.d("BikeBell", "Animation state - isRinging: $isRinging, intensity: $animatedRingIntensity")
+                }
 
                 // Initialize settings
                 LaunchedEffect(Unit) {
@@ -129,26 +136,42 @@ class MainActivity : ComponentActivity() {
                     
                     try {
                         val mappedThreshold = ((threshold - 1f) / 49f) * 1.95f + 0.05f
-                        val mappedSensitivity = ((sensitivity - 50f) / 150f) * 3.0f + 0.3f
+                        val mappedSensitivity = ((sensitivity - 50f) / 150f) * 6.0f + 0.3f
                         
                         Log.d("BikeBell", "Acceleration: ${motionManager.acceleration}, Threshold: $mappedThreshold")
                         
                         if (motionManager.isActive) {
                             if (motionManager.acceleration > mappedThreshold) {
+                                val intensity = (motionManager.acceleration - mappedThreshold) * mappedSensitivity
+                                ringIntensity = intensity.coerceIn(0.1f, 0.8f)
                                 isRinging = true
                                 
-                                Log.d("BikeBell", "Playing bell with intensity: ${(motionManager.acceleration - mappedThreshold) * mappedSensitivity}")
-                                soundManager.playBell((motionManager.acceleration - mappedThreshold) * mappedSensitivity)
-                                // Reset ringing state after a shorter delay
+                                Log.d("BikeBell", "Playing bell with intensity: $intensity")
+                                soundManager.playBell(intensity)
+                                // Reset ringing state after a longer delay to allow full sound
                                 launch {
-                                    delay(150)
+                                    delay(800)
+                                    Log.d("BikeBell", "Stopping ring animation")
                                     isRinging = false
+                                    ringIntensity = 0f
                                     bellState = "green"
                                 }
                             } else {
+                                // Ensure ringing stops when acceleration drops below threshold
+                                if (isRinging) {
+                                    Log.d("BikeBell", "Acceleration below threshold, stopping ring")
+                                    isRinging = false
+                                    ringIntensity = 0f
+                                }
                                 bellState = "green"
                             }
                         } else {
+                            // Ensure ringing stops when motion manager is inactive
+                            if (isRinging) {
+                                Log.d("BikeBell", "Motion manager inactive, stopping ring")
+                                isRinging = false
+                                ringIntensity = 0f
+                            }
                             bellState = "red"
                         }
                     } catch (e: Exception) {
@@ -158,7 +181,7 @@ class MainActivity : ComponentActivity() {
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = Color.Black
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         // Settings button
@@ -205,7 +228,6 @@ class MainActivity : ComponentActivity() {
                                     painter = painterResource(
                                         when {
                                             !motionManager.isActive -> R.drawable.belliconred
-                                            
                                             else -> R.drawable.bellicongreen
                                         }
                                     ),
@@ -214,18 +236,44 @@ class MainActivity : ComponentActivity() {
                                         .fillMaxWidth()
                                         .aspectRatio(1f)
                                         .let { mod ->
-                                            if (isRinging) {
-                                                mod.graphicsLayer {
-                                                    rotationZ = swingAngle
-                                                    scaleX = 1.05f
-                                                    scaleY = 1.05f
-                                                }
-                                            } else {
-                                                mod
-                                            }
+                                            mod
                                         },
-                                    contentScale = ContentScale.Inside
+                                    contentScale = ContentScale.Inside,
+                                    colorFilter = if (isRinging) {
+                                        ColorFilter.tint(
+                                            Color(
+                                                red = 1f,
+                                                green = 0.5f - (animatedRingIntensity * 0.2f),
+                                                blue = 0f,
+                                                alpha = 1f
+                                            )
+                                        )
+                                    } else null
                                 )
+                                
+                                // ON / OFF text with state-based coloring
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "ON",
+                                        color = if (motionManager.isActive) Color.Green else Color.Gray,
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
+                                    Text(
+                                        text = "/",
+                                        color = Color.Gray,
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
+                                    Text(
+                                        text = "OFF",
+                                        color = if (motionManager.isActive) Color.Gray else Color.Red,
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
+                                }
                             }
                         }
                     }
