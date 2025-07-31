@@ -1,0 +1,19 @@
+# BikeBell Local Properties Template
+# Copy this file to local.properties and update with your keystore details
+
+# SDK location (update with your Android SDK path)
+sdk.dir=/Users/username/Library/Android/sdk
+
+# Release signing configuration
+# Uncomment and update these after generating the keystore
+# RELEASE_STORE_FILE=keystore/bikebell-release-key.jks
+# RELEASE_STORE_PASSWORD=bikebell123
+# RELEASE_KEY_ALIAS=bikebell-key
+# RELEASE_KEY_PASSWORD=bikebell123
+
+# Instructions:
+# 1. Copy this file to local.properties
+# 2. Update sdk.dir with your Android SDK path
+# 3. Run ./generate_keystore.sh to create keystore
+# 4. Uncomment the signing configuration lines above
+# 5. Update build.gradle.kts to enable signing config 

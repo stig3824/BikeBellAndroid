@@ -5,29 +5,43 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# Keep `Companion` object fields of serializable classes.
-# This avoids serializer lookup through `getDeclaredClasses` as done for named companion objects.
--if @kotlinx.serialization.Serializable class **
--keepclassmembers class <1> {
-    static <1>$Companion Companion;
-}
+# If your project uses WebView with JS, uncomment the following
+# and specify the fully qualified class name to the JavaScript interface
+# class:
+#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+#   public *;
+#}
 
-# Keep `serializer()` on companion objects (both default and named) of serializable classes.
--if @kotlinx.serialization.Serializable class ** {
-    static **$* *;
-}
--keepclassmembers class <2>$<3> {
-    kotlinx.serialization.KSerializer serializer(...);
-}
+# Uncomment this to preserve the line number information for
+# debugging stack traces.
+#-keepattributes SourceFile,LineNumberTable
 
-# Keep `INSTANCE.serializer()` of serializable objects.
--if @kotlinx.serialization.Serializable class ** {
-    public static ** INSTANCE;
-}
--keepclassmembers class <1> {
-    public static <1> INSTANCE;
-    kotlinx.serialization.KSerializer serializer(...);
-}
+# If you keep the line number information, uncomment this to
+# hide the original source file name.
+#-renamesourcefileattribute SourceFile
 
-# @Serializable and @Polymorphic are used at runtime for polymorphic serialization.
--keepattributes RuntimeVisibleAnnotations,AnnotationDefault 
+# Keep Compose classes
+-keep class androidx.compose.** { *; }
+-keep class androidx.compose.ui.** { *; }
+-keep class androidx.compose.material3.** { *; }
+
+# Keep Kotlin coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# Keep Android lifecycle components
+-keep class androidx.lifecycle.** { *; }
+
+# Keep audio-related classes
+-keep class android.media.** { *; }
+-keep class android.media.AudioManager { *; }
+-keep class android.media.MediaPlayer { *; }
+
+# Keep sensor-related classes
+-keep class android.hardware.SensorManager { *; }
+-keep class android.hardware.Sensor { *; }
+-keep class android.hardware.SensorEvent { *; }
+
+# Keep application classes
+-keep class com.bikebell.app.** { *; }
+-keep class com.example.bikebellandroid.** { *; } 
