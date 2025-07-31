@@ -103,20 +103,21 @@ class MainActivity : ComponentActivity() {
                 var isRinging by remember { mutableStateOf(false) }
                 var ringIntensity by remember { mutableStateOf(0f) }
                 var bellState by remember { mutableStateOf("red") }
+                var animationTriggered by remember { mutableStateOf(false) }
                 
-                // Animate the ring intensity
+                // Animate the ring intensity independently
                 val animatedRingIntensity by animateFloatAsState(
-                    targetValue = if (isRinging) ringIntensity else 0f,
+                    targetValue = ringIntensity,
                     animationSpec = tween(
-                        durationMillis = if (isRinging) (10000 / ringIntensity.coerceAtLeast(0.1f)).toInt() else 1500,
+                        durationMillis = if (ringIntensity > 0f) (30000 / ringIntensity.coerceAtLeast(0.1f)).toInt() else 500,
                         easing = EaseInOut
                     ),
                     label = "ring_intensity"
                 )
                 
                 // Debug animation state
-                LaunchedEffect(isRinging, animatedRingIntensity) {
-                    Log.d("BikeBell", "Animation state - isRinging: $isRinging, intensity: $animatedRingIntensity")
+                LaunchedEffect(isRinging, animatedRingIntensity, animationTriggered) {
+                    Log.d("BikeBell", "Animation state - isRinging: $isRinging, intensity: $animatedRingIntensity, animationTriggered: $animationTriggered")
                 }
 
                 // Initialize settings
@@ -148,19 +149,29 @@ class MainActivity : ComponentActivity() {
                                 
                                 Log.d("BikeBell", "Playing bell with intensity: $intensity")
                                 soundManager.playBell(intensity)
-                                // Reset ringing state after a longer delay to allow full sound
+                                // Reset ringing state after sound duration
                                 launch {
                                     delay(800)
-                                    Log.d("BikeBell", "Stopping ring animation")
+                                    Log.d("BikeBell", "Stopping ring sound")
                                     isRinging = false
-                                    ringIntensity = 0f
                                     bellState = "green"
+                                }
+                                // Reset animation after much longer delay
+                                launch {
+                                    delay(5000)
+                                    Log.d("BikeBell", "Stopping animation")
+                                    ringIntensity = 0f
+                                    Log.d("BikeBell", "Animation reset complete")
                                 }
                             } else {
                                 // Ensure ringing stops when acceleration drops below threshold
                                 if (isRinging) {
                                     Log.d("BikeBell", "Acceleration below threshold, stopping ring")
                                     isRinging = false
+                                }
+                                // Let animation fade out smoothly when acceleration drops below threshold
+                                if (ringIntensity > 0f) {
+                                    Log.d("BikeBell", "Acceleration below threshold, fading animation")
                                     ringIntensity = 0f
                                 }
                                 bellState = "green"
@@ -170,6 +181,10 @@ class MainActivity : ComponentActivity() {
                             if (isRinging) {
                                 Log.d("BikeBell", "Motion manager inactive, stopping ring")
                                 isRinging = false
+                            }
+                            // Let animation fade out smoothly when motion manager is inactive
+                            if (ringIntensity > 0f) {
+                                Log.d("BikeBell", "Motion manager inactive, fading animation")
                                 ringIntensity = 0f
                             }
                             bellState = "red"
@@ -239,7 +254,7 @@ class MainActivity : ComponentActivity() {
                                             mod
                                         },
                                     contentScale = ContentScale.Inside,
-                                    colorFilter = if (isRinging) {
+                                    colorFilter = if (animatedRingIntensity > 0f) {
                                         ColorFilter.tint(
                                             Color(
                                                 red = 1f,
